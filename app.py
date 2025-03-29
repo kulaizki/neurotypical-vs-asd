@@ -24,6 +24,10 @@ The visualizations are based on functional connectivity data and highlight diffe
 # Sidebar for navigation and options
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Select a Page", ["Overview", "Connectivity Matrices", "Network Visualization", "Regional Differences", "About"])
+st.sidebar.markdown("---")  # Adds a horizontal line for separation
+st.sidebar.markdown("### Dev's Github: [kulaizki](https://github.com/kulaizki)")
+
+
 # Generate synthetic data for demonstration purposes
 @st.cache_data
 def generate_sample_data(seed=42):
