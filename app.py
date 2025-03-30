@@ -503,7 +503,7 @@ if page == "Overview":
 
         st.markdown("""
         Typical characteristics:
-        - Balanced local and long-range connectivity
+        - Balanced local and lon    g-range connectivity
         - Efficient information transfer between brain regions
         - Well-organized functional networks
         - Appropriate integration and segregation of information
@@ -841,228 +841,167 @@ elif page == "Network Visualization":
         # Threshold for brain visualization
         brain_threshold = st.slider("Connection Strength Threshold", 0.5, 0.9, 0.7, 0.05)
         
-        # Function to create connectome plot using nilearn
+        # Add a checkbox to show data source information
+        show_data_info = st.checkbox("Show data source information", value=False)
+        if show_data_info:
+            st.info("""
+            This visualization uses real anatomical locations for brain regions based on the 
+            Harvard-Oxford atlas, which is a probabilistic atlas included with nilearn that doesn't 
+            require external downloading. The connection strengths between regions are based on the 
+            functional connectivity data from your analysis.
+            """)
+        
+        # Function to create connectome plot using nilearn with Harvard-Oxford atlas instead of AAL
         def plot_connectome(conn_matrix, threshold, title):
             try:
-                # Get AAL atlas coordinates with alternative download approach
-                try:
-                    # Try to load from local cache first
-                    aal_atlas = datasets.fetch_atlas_aal()
-                except Exception as ssl_error:
-                    st.warning("SSL error when downloading AAL atlas, attempting alternative download method.")
-                    
-                    # Try to use an alternative mirror or GitHub hosted version
-                    # Create a temporary directory to store downloaded atlas files
-                    temp_dir = tempfile.mkdtemp()
-                    
-                    # Define paths for downloaded files
-                    aal_maps_path = os.path.join(temp_dir, 'aal_maps.nii.gz')
-                    aal_labels_path = os.path.join(temp_dir, 'aal_labels.txt')
-                    
-                    # Alternative download URLs
-                    # These would typically be more reliable mirrors or GitHub repositories
-                    # For demo purposes, we'll create a simple fallback with synthetic data
-                    try:
-                        # In a real implementation, we would download from alternative sources
-                        # For now, create synthetic coordinates for demonstration
-                        
-                        # Create a basic 3D brain shape with region coordinates
-                        n_regions = conn_matrix.shape[0]
-                        
-                        # Create synthetic AAL atlas-like object
-                        class SyntheticAALAtlas:
-                            def __init__(self, n_regions):
-                                self.maps = None  # Would normally be the atlas image
-                                self.labels = [f"Region_{i}" for i in range(n_regions)]
-                                
-                                # Generate reasonable brain-like 3D coordinates
-                                self.maps_centroids = np.zeros((n_regions, 3))
-                                
-                                # Arrange regions in a roughly brain-shaped ellipsoid
-                                phi = np.linspace(0, 2*np.pi, int(np.ceil(np.sqrt(n_regions))))
-                                theta = np.linspace(0, np.pi, int(np.ceil(np.sqrt(n_regions))))
-                                
-                                idx = 0
-                                for p in phi:
-                                    for t in theta:
-                                        if idx < n_regions:
-                                            # Create coordinates in a brain-like ellipsoid shape
-                                            x = 60 * np.sin(t) * np.cos(p)  # Left-right
-                                            y = 40 * np.sin(t) * np.sin(p)  # Front-back
-                                            z = 30 * np.cos(t)              # Top-bottom
-                                            
-                                            self.maps_centroids[idx] = [x, y, z]
-                                            idx += 1
+                # Use Harvard-Oxford atlas which is included in nilearn and doesn't require external download
+                from nilearn import datasets
+                import matplotlib.pyplot as plt
                 
-                        aal_atlas = SyntheticAALAtlas(n_regions)
-                        st.info("Using synthetic atlas coordinates for visualization.")
-                        
-                    except Exception as alt_error:
-                        st.error(f"Failed to use alternative atlas download method: {str(alt_error)}")
-                        raise
+                # Fetch the Harvard-Oxford atlas with reliably available coordinates
+                harvard_oxford = datasets.fetch_atlas_harvard_oxford('cort-maxprob-thr25-2mm')
                 
-                # Check for matrix size to determine appropriate coordinates
-                if 'regions' in locals() and 16 <= conn_matrix.shape[0] <= 20:
-                    # We're using general regions (grouped AAL)
-                    # Need to average coordinates for each general region
-                    
-                    # Get the AAL region names
-                    aal_regions = [region.lower() for region in aal_atlas.labels]
-                    
-                    # Create a list of general regions in the same order as our matrix
-                    general_regions = regions
-                    
-                    # Create a mapping from AAL regions to general regions
-                    region_mapping = {}
-                    for i, region in enumerate(aal_regions):
-                        if 'frontal' in region or 'front' in region or 'prefrontal' in region:
-                            if '_l' in region or '_l_' in region or 'left' in region:
-                                general_region = "Frontal_L"
-                            else:
-                                general_region = "Frontal_R"
-                        elif 'parietal' in region or 'parieta' in region:
-                            if '_l' in region or '_l_' in region or 'left' in region:
-                                general_region = "Parietal_L"
-                            else:
-                                general_region = "Parietal_R"
-                        elif 'temporal' in region or 'tempor' in region:
-                            if '_l' in region or '_l_' in region or 'left' in region:
-                                general_region = "Temporal_L"
-                            else:
-                                general_region = "Temporal_R"
-                        elif 'occipital' in region or 'occipit' in region:
-                            if '_l' in region or '_l_' in region or 'left' in region:
-                                general_region = "Occipital_L"
-                            else:
-                                general_region = "Occipital_R"
-                        elif 'cingulum' in region or 'cingulat' in region or 'cingul' in region:
-                            if '_l' in region or '_l_' in region or 'left' in region:
-                                general_region = "Cingulate_L"
-                            else:
-                                general_region = "Cingulate_R"
-                        elif 'amygdala' in region:
-                            if '_l' in region or '_l_' in region or 'left' in region:
-                                general_region = "Amygdala_L"
-                            else:
-                                general_region = "Amygdala_R"
-                        elif 'hippocampus' in region or 'hippocamp' in region:
-                            if '_l' in region or '_l_' in region or 'left' in region:
-                                general_region = "Hippocampus_L"
-                            else:
-                                general_region = "Hippocampus_R"
-                        elif 'thalamus' in region:
-                            if '_l' in region or '_l_' in region or 'left' in region:
-                                general_region = "Thalamus_L"
-                            else:
-                                general_region = "Thalamus_R"
-                        else:
-                            # For other regions, assign to a general "Other" category
-                            if '_l' in region or '_l_' in region or 'left' in region:
-                                general_region = "Other_L"
-                            else:
-                                general_region = "Other_R"
-                        
-                        region_mapping[i] = general_region
-                    
-                    # Get unique general regions in the same order as our data
-                    general_region_indices = {region: i for i, region in enumerate(general_regions)}
-                    
-                    # Extract AAL centroids from the atlas
-                    centroids = np.vstack((
-                        aal_atlas.maps_centroids[:, 0],
-                        aal_atlas.maps_centroids[:, 1],
-                        aal_atlas.maps_centroids[:, 2]
-                    )).T
-                    
-                    # Calculate average coordinates for each general region
-                    general_coords = np.zeros((len(general_regions), 3))
-                    region_counts = np.zeros(len(general_regions))
-                    
-                    for i, region in enumerate(aal_regions):
-                        if i < len(centroids) and region_mapping[i] in general_region_indices:
-                            idx = general_region_indices[region_mapping[i]]
-                            general_coords[idx] += centroids[i]
-                            region_counts[idx] += 1
-                    
-                    # Average coordinates for regions with multiple AAL regions
-                    for i in range(len(general_regions)):
-                        if region_counts[i] > 0:
-                            general_coords[i] /= region_counts[i]
-                    
-                    coords = general_coords
-                    
-                elif conn_matrix.shape[0] == 116:  # Full AAL atlas
-                    # Use AAL centroids directly
-                    coords = np.vstack((
-                        aal_atlas.maps_centroids[:, 0],
-                        aal_atlas.maps_centroids[:, 1],
-                        aal_atlas.maps_centroids[:, 2]
-                    )).T
-                    
-                    # Ensure coord count matches matrix size
-                    coords = coords[:conn_matrix.shape[0]]
+                # Get coordinates - this atlas has reliable coordinates that don't need downloading
+                coords = plotting.find_parcellation_cut_coords(harvard_oxford.maps)
                 
+                # Ensure we have the right number of coordinates for our matrix
+                n_regions = conn_matrix.shape[0]
+                
+                if len(coords) < n_regions:
+                    st.info(f"Atlas has fewer regions ({len(coords)}) than connectivity matrix ({n_regions}). Using subset of connectivity data.")
+                    # Use a subset of the connectivity matrix
+                    conn_matrix = conn_matrix[:len(coords), :len(coords)]
+                elif len(coords) > n_regions:
+                    st.info(f"Atlas has more regions ({len(coords)}) than connectivity matrix ({n_regions}). Using subset of atlas regions.")
+                    # Use a subset of the coordinates
+                    coords = coords[:n_regions]
+                
+                # Create a figure first
+                fig = plt.figure(figsize=(14, 8))
+                
+                # Check if we're visualizing a difference matrix by looking for negative values
+                # If all values are positive, it's likely a regular connectivity matrix
+                has_negative = np.any(conn_matrix < 0)
+                
+                # Adjust parameters based on whether it's a difference matrix or regular connectivity
+                if has_negative:
+                    # For difference matrices, use a divergent color scheme and display both hemispheres
+                    display = plotting.plot_connectome(
+                        conn_matrix, 
+                        coords, 
+                        edge_threshold=threshold,
+                        node_size=25,
+                        display_mode='lzry',  # Show both left and right hemispheres
+                        figure=fig,
+                        node_color='auto',
+                        colorbar=True,
+                    )
                 else:
-                    # For other dimensions or fallback, create a brain-shaped layout
-                    st.warning("Using approximate coordinates for visualization.")
-                    n_nodes = conn_matrix.shape[0]
-                    
-                    # Create a sphere of coordinates
-                    phi = np.linspace(0, 2*np.pi, int(np.sqrt(n_nodes)))
-                    theta = np.linspace(0, np.pi, int(np.sqrt(n_nodes)))
-                    
-                    coords = []
-                    for p in phi:
-                        for t in theta:
-                            x = 50 * np.sin(t) * np.cos(p)
-                            y = 50 * np.sin(t) * np.sin(p)
-                            z = 50 * np.cos(t)
-                            coords.append([x, y, z])
-                    
-                    coords = np.array(coords)[:n_nodes]
+                    # For regular connectivity matrices, use a simpler approach without edge_cmap
+                    display = plotting.plot_connectome(
+                        conn_matrix, 
+                        coords, 
+                        edge_threshold=threshold,
+                        node_size=25,
+                        display_mode='lzry',  # Show both left and right hemispheres
+                        figure=fig,
+                        node_color='auto',
+                    )
                 
-                # Plot the connectome
-                fig = plt.figure(figsize=(12, 8))
+                # Add title and adjust for better readability
+                plt.subplots_adjust(top=0.85)
+                plt.suptitle(title, fontsize=16, y=0.95)
                 
-                # Prepare the plot
-                view = plotting.view_connectome(
-                    conn_matrix, coords, 
-                    edge_threshold=threshold,
-                    title=title,
-                    node_size=20,  # Larger node size for fewer nodes
-                    linewidth=2.5   # Thicker lines for better visibility
-                )
-                
-                # Convert to HTML for Streamlit
-                view_html = view.get_iframe()
-                return view_html.src_html()
+                # Return the figure directly
+                return fig
                 
             except Exception as e:
-                st.error(f"Error creating 3D brain visualization: {str(e)}")
+                st.error(f"Error creating brain visualization: {str(e)}")
                 
-                # Fallback - create a simplified 2D connectome plot
+                # Create a more helpful visualization fallback using networkx
+                st.warning("Falling back to schematic brain network visualization.")
+                
+                # Create a schematic brain network visualization
                 fig, ax = plt.subplots(figsize=(10, 8))
                 
-                # Generate random coordinates in 2D for demonstration
-                np.random.seed(42)
+                # Create a network graph
                 n_nodes = conn_matrix.shape[0]
-                coords_2d = np.random.rand(n_nodes, 2) * 2 - 1
-                
-                # Add edges
-                for i in range(n_nodes):
-                    for j in range(i+1, n_nodes):
-                        if conn_matrix[i, j] > threshold:
-                            ax.plot([coords_2d[i, 0], coords_2d[j, 0]], 
-                                   [coords_2d[i, 1], coords_2d[j, 1]], 
-                                   'k-', alpha=conn_matrix[i, j], linewidth=conn_matrix[i, j]*2)
+                G = nx.Graph()
                 
                 # Add nodes
-                ax.scatter(coords_2d[:, 0], coords_2d[:, 1], s=50, c='r')
+                for i in range(n_nodes):
+                    G.add_node(i)
                 
-                ax.set_title(title)
-                ax.set_xlim(-1.2, 1.2)
-                ax.set_ylim(-1.2, 1.2)
+                # Add edges above threshold
+                for i in range(n_nodes):
+                    for j in range(i+1, n_nodes):
+                        if abs(conn_matrix[i, j]) > threshold:  # Use absolute value for difference matrices
+                            G.add_edge(i, j, weight=conn_matrix[i, j])
+                
+                # Create a brain-shaped layout
+                pos = {}
+                radius = 10
+                node_per_ring = max(1, n_nodes // 3)
+                
+                # Place nodes in a brain-like shape (front to back)
+                for i in range(n_nodes):
+                    if i < node_per_ring:
+                        # Frontal nodes
+                        angle = (i / node_per_ring) * np.pi - np.pi/2
+                        pos[i] = (radius * 0.8 * np.cos(angle), radius * 1.2 * np.sin(angle) + radius * 0.7)
+                    elif i < 2 * node_per_ring:
+                        # Central nodes
+                        angle = ((i - node_per_ring) / node_per_ring) * np.pi - np.pi/2
+                        pos[i] = (radius * np.cos(angle), radius * np.sin(angle))
+                    else:
+                        # Posterior nodes
+                        angle = ((i - 2 * node_per_ring) / max(1, (n_nodes - 2 * node_per_ring))) * np.pi - np.pi/2
+                        pos[i] = (radius * 0.8 * np.cos(angle), radius * 1.2 * np.sin(angle) - radius * 0.7)
+                
+                # Draw edges with width and color based on connection strength
+                # Check if we're visualizing a difference matrix
+                has_negative = np.any(conn_matrix < 0)
+                
+                for (u, v, d) in G.edges(data=True):
+                    weight = d['weight']
+                    width = min(5, abs(weight) * 5)  # Cap width for very strong connections
+                    
+                    if has_negative:
+                        # For difference matrices: red for positive, blue for negative
+                        color = 'red' if weight > 0 else 'blue'
+                        alpha = min(0.9, 0.5 + abs(weight))
+                    else:
+                        # For regular connectivity: all blue with varying intensity
+                        color = 'blue'
+                        alpha = min(0.9, 0.3 + weight)
+                        
+                    nx.draw_networkx_edges(G, pos, edgelist=[(u, v)], width=width, alpha=alpha,
+                                         edge_color=color)
+                
+                # Draw nodes with size based on degree
+                node_degrees = dict(G.degree())
+                node_sizes = [150 + 50 * node_degrees.get(node, 0) for node in G.nodes()]
+                nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='skyblue',
+                                     alpha=0.8, edgecolors='black')
+                
+                # Add labels if we have region names
+                if len(regions) == n_nodes:
+                    labels = {i: short_labels[i] for i in range(n_nodes)}
+                    nx.draw_networkx_labels(G, pos, labels=labels, font_size=8, font_color='black')
+                
+                # Add title and make it look nice
+                ax.set_title(f"{title}\n(Schematic Representation)")
+                ax.set_facecolor('whitesmoke')
                 ax.axis('off')
+                
+                # Add schematic outline of brain
+                brain_outline = plt.Circle((0, 0), radius, fill=False, color='gray', linestyle='--', alpha=0.5)
+                ax.add_patch(brain_outline)
+                
+                # Add a note about being a schematic view
+                ax.text(0, -radius*1.5,
+                       "This is a schematic brain network representation with\nnode positions arranged in an approximate brain shape.",
+                       ha='center', fontsize=10, style='italic')
                 
                 return fig
         
@@ -1071,11 +1010,8 @@ elif page == "Network Visualization":
         
         with brain_tab1:
             try:
-                html_view = plot_connectome(nt_matrix, brain_threshold, "Neurotypical Brain Connectivity")
-                if isinstance(html_view, str):
-                    st.components.v1.html(html_view, height=600)
-                else:
-                    st.pyplot(html_view)
+                brain_fig = plot_connectome(nt_matrix, brain_threshold, "Neurotypical Brain Connectivity")
+                st.pyplot(brain_fig)
                 
                 st.markdown("""
                 **Observations in Neurotypical Brain**:
@@ -1088,11 +1024,8 @@ elif page == "Network Visualization":
         
         with brain_tab2:
             try:
-                html_view = plot_connectome(asd_matrix, brain_threshold, "ASD Brain Connectivity")
-                if isinstance(html_view, str):
-                    st.components.v1.html(html_view, height=600)
-                else:
-                    st.pyplot(html_view)
+                brain_fig = plot_connectome(asd_matrix, brain_threshold, "ASD Brain Connectivity")
+                st.pyplot(brain_fig)
                 
                 st.markdown("""
                 **Observations in ASD Brain**:
@@ -1107,11 +1040,8 @@ elif page == "Network Visualization":
             try:
                 # Normalize the difference matrix for better visualization
                 diff_norm = diff_matrix / np.max(np.abs(diff_matrix))
-                html_view = plot_connectome(diff_norm, brain_threshold, "Connectivity Differences (ASD - Neurotypical)")
-                if isinstance(html_view, str):
-                    st.components.v1.html(html_view, height=600)
-                else:
-                    st.pyplot(html_view)
+                brain_fig = plot_connectome(diff_norm, brain_threshold, "Connectivity Differences (ASD - Neurotypical)")
+                st.pyplot(brain_fig)
                 
                 st.markdown("""
                 **Connectivity Differences**:
@@ -1125,7 +1055,7 @@ elif page == "Network Visualization":
     st.subheader("Network Metrics Comparison")
     
     # Calculate network metrics
-    def calculate_network_metrics(conn_matrix, threshold):
+    def calculate_network_metrics(conn_matrix, threshold_value):
         G = nx.Graph()
         
         # Add nodes
@@ -1135,7 +1065,7 @@ elif page == "Network Visualization":
         # Add edges above threshold
         for i in range(len(regions)):
             for j in range(i+1, len(regions)):
-                if conn_matrix[i, j] > threshold:
+                if conn_matrix[i, j] > threshold_value:
                     G.add_edge(i, j, weight=conn_matrix[i, j])
         
         # Calculate metrics
@@ -1150,8 +1080,11 @@ elif page == "Network Visualization":
         }
     
     try:
-        nt_metrics = calculate_network_metrics(nt_matrix, threshold)
-        asd_metrics = calculate_network_metrics(asd_matrix, threshold)
+        # Use brain_threshold if we're in Brain View, otherwise use the threshold from the interactive/graph view
+        metrics_threshold = brain_threshold if viz_option == "Brain View" else threshold
+        
+        nt_metrics = calculate_network_metrics(nt_matrix, metrics_threshold)
+        asd_metrics = calculate_network_metrics(asd_matrix, metrics_threshold)
         
         # Create DataFrame for metrics
         metrics_df = pd.DataFrame({
