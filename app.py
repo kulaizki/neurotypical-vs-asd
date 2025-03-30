@@ -41,6 +41,57 @@ page = st.sidebar.radio("Select a Page", ["Overview", "Connectivity Matrices", "
 st.sidebar.markdown("---")  # Adds a horizontal line for separation
 st.sidebar.markdown("### Dev's Github: [kulaizki](https://github.com/kulaizki)")
 
+# Add this function definition to your code, before it's called in the Brain View section
+def get_balanced_coordinates(n_regions):
+    """Create balanced coordinates across left and right hemispheres for brain visualization"""
+    # Define manually balanced coordinates for visualization
+    # Left hemisphere (negative x values)
+    left_coords = [
+        [-40, -30, 20],  # Frontal left
+        [-40, 10, 30],   # Motor left
+        [-30, -60, 20],  # Parietal left
+        [-50, -20, -10], # Temporal left
+        [-20, -80, 0],   # Occipital left
+        [-10, 20, 30],   # Cingulate left
+        [-20, -10, -15], # Limbic left
+        [-10, -20, 10],  # Subcortical left
+    ]
+    
+    # Right hemisphere (positive x values)
+    right_coords = [
+        [40, -30, 20],   # Frontal right
+        [40, 10, 30],    # Motor right
+        [30, -60, 20],   # Parietal right
+        [50, -20, -10],  # Temporal right
+        [20, -80, 0],    # Occipital right
+        [10, 20, 30],    # Cingulate right
+        [20, -10, -15],  # Limbic right
+        [10, -20, 10],   # Subcortical right
+    ]
+    
+    # Combine coordinates
+    all_coords = left_coords + right_coords
+    
+    # If we have more coordinates than regions, select a balanced subset
+    if len(all_coords) > n_regions:
+        # Take coordinates evenly from left and right
+        balanced_coords = []
+        for i in range(n_regions):
+            # Alternating between left and right
+            if i % 2 == 0 and i//2 < len(left_coords):
+                balanced_coords.append(left_coords[i//2])
+            elif (i-1)//2 < len(right_coords):
+                balanced_coords.append(right_coords[(i-1)//2])
+        all_coords = balanced_coords[:n_regions]
+    
+    # If we have more regions than coordinates, duplicate some coordinates
+    elif len(all_coords) < n_regions:
+        extra_needed = n_regions - len(all_coords)
+        # Just repeat some coordinates
+        all_coords.extend(all_coords[:extra_needed])
+        
+    return all_coords
+
 # Function to download and load ABIDE preprocessed data
 @st.cache_data
 def load_abide_data():
@@ -851,167 +902,218 @@ elif page == "Network Visualization":
             functional connectivity data from your analysis.
             """)
         
+        # Add this near the top of your Brain View section
+        use_interactive = st.checkbox("Use interactive 3D visualization (recommended)", value=True)
+
         # Function to create connectome plot using nilearn with Harvard-Oxford atlas instead of AAL
         def plot_connectome(conn_matrix, threshold, title):
             try:
                 # Use Harvard-Oxford atlas which is included in nilearn and doesn't require external download
                 from nilearn import datasets
                 import matplotlib.pyplot as plt
+                import numpy as np
                 
-                # Fetch the Harvard-Oxford atlas with reliably available coordinates
-                harvard_oxford = datasets.fetch_atlas_harvard_oxford('cort-maxprob-thr25-2mm')
+                # Define manually balanced coordinates for visualization
+                # Left hemisphere (negative x values)
+                left_coords = [
+                    [-40, -30, 20],  # Frontal left
+                    [-40, 10, 30],   # Motor left
+                    [-30, -60, 20],  # Parietal left
+                    [-50, -20, -10], # Temporal left
+                    [-20, -80, 0],   # Occipital left
+                    [-10, 20, 30],   # Cingulate left
+                    [-20, -10, -15], # Limbic left
+                    [-10, -20, 10],  # Subcortical left
+                ]
                 
-                # Get coordinates - this atlas has reliable coordinates that don't need downloading
-                coords = plotting.find_parcellation_cut_coords(harvard_oxford.maps)
+                # Right hemisphere (positive x values)
+                right_coords = [
+                    [40, -30, 20],   # Frontal right
+                    [40, 10, 30],    # Motor right
+                    [30, -60, 20],   # Parietal right
+                    [50, -20, -10],  # Temporal right
+                    [20, -80, 0],    # Occipital right
+                    [10, 20, 30],    # Cingulate right
+                    [20, -10, -15],  # Limbic right
+                    [10, -20, 10],   # Subcortical right
+                ]
+                
+                # Combine coordinates
+                all_coords = left_coords + right_coords
                 
                 # Ensure we have the right number of coordinates for our matrix
                 n_regions = conn_matrix.shape[0]
                 
-                if len(coords) < n_regions:
-                    st.info(f"Atlas has fewer regions ({len(coords)}) than connectivity matrix ({n_regions}). Using subset of connectivity data.")
-                    # Use a subset of the connectivity matrix
-                    conn_matrix = conn_matrix[:len(coords), :len(coords)]
-                elif len(coords) > n_regions:
-                    st.info(f"Atlas has more regions ({len(coords)}) than connectivity matrix ({n_regions}). Using subset of atlas regions.")
-                    # Use a subset of the coordinates
-                    coords = coords[:n_regions]
+                # If we have more coordinates than regions, select a balanced subset
+                if len(all_coords) > n_regions:
+                    # Take coordinates evenly from left and right
+                    balanced_coords = []
+                    for i in range(n_regions):
+                        # Alternating between left and right
+                        if i % 2 == 0 and i//2 < len(left_coords):
+                            balanced_coords.append(left_coords[i//2])
+                        elif (i-1)//2 < len(right_coords):
+                            balanced_coords.append(right_coords[(i-1)//2])
+                    all_coords = balanced_coords[:n_regions]
                 
-                # Create a figure first
-                fig = plt.figure(figsize=(14, 8))
+                # If we have more regions than coordinates, duplicate some coordinates
+                elif len(all_coords) < n_regions:
+                    extra_needed = n_regions - len(all_coords)
+                    # Just repeat some coordinates
+                    all_coords.extend(all_coords[:extra_needed])
+                
+                # Create a figure 
+                fig = plt.figure(figsize=(14, 10))
                 
                 # Check if we're visualizing a difference matrix by looking for negative values
-                # If all values are positive, it's likely a regular connectivity matrix
                 has_negative = np.any(conn_matrix < 0)
                 
-                # Adjust parameters based on whether it's a difference matrix or regular connectivity
-                if has_negative:
-                    # For difference matrices, use a divergent color scheme and display both hemispheres
-                    display = plotting.plot_connectome(
-                        conn_matrix, 
-                        coords, 
-                        edge_threshold=threshold,
-                        node_size=25,
-                        display_mode='lzry',  # Show both left and right hemispheres
-                        figure=fig,
-                        node_color='auto',
-                        colorbar=True,
-                    )
-                else:
-                    # For regular connectivity matrices, use a simpler approach without edge_cmap
-                    display = plotting.plot_connectome(
-                        conn_matrix, 
-                        coords, 
-                        edge_threshold=threshold,
-                        node_size=25,
-                        display_mode='lzry',  # Show both left and right hemispheres
-                        figure=fig,
-                        node_color='auto',
-                    )
+                # Simpler parameters to avoid the cmap error, but still get good visualization
+                # Removed edge_cmap parameter which causes the error
+                display = plotting.plot_connectome(
+                    conn_matrix, 
+                    all_coords,  # Using our custom balanced coordinates
+                    edge_threshold=threshold,
+                    node_size=50,
+                    display_mode="z",  # This shows the top view (axial)
+                    figure=fig,
+                    node_color='auto'
+                )
                 
-                # Add title and adjust for better readability
-                plt.subplots_adjust(top=0.85)
-                plt.suptitle(title, fontsize=16, y=0.95)
+                # Add title
+                plt.suptitle(title, fontsize=16)
                 
-                # Return the figure directly
-                return fig
+                # Add a note about the visualization approach
+                fig.text(0.5, 0.01, 
+                         "Note: Regions distributed across both hemispheres for balanced visualization", 
+                         ha='center', fontsize=8, style='italic')
+                
+                return fig, all_coords  # Return coordinates along with the figure
                 
             except Exception as e:
                 st.error(f"Error creating brain visualization: {str(e)}")
                 
-                # Create a more helpful visualization fallback using networkx
-                st.warning("Falling back to schematic brain network visualization.")
+                # Create a balanced fallback visualization and return default coordinates
+                return create_balanced_fallback_visualization(conn_matrix, threshold, title), None
+
+        def create_balanced_fallback_visualization(conn_matrix, threshold, title):
+            """Create a schematic brain network visualization with clear hemisphere separation"""
+            fig, ax = plt.subplots(figsize=(12, 10))
+            
+            # Create a network graph
+            n_nodes = conn_matrix.shape[0]
+            G = nx.Graph()
+            
+            # Add nodes
+            for i in range(n_nodes):
+                G.add_node(i)
+            
+            # Add edges above threshold
+            for i in range(n_nodes):
+                for j in range(i+1, n_nodes):
+                    if abs(conn_matrix[i, j]) > threshold:
+                        G.add_edge(i, j, weight=conn_matrix[i, j])
+            
+            # Create a brain-shaped layout with clear hemisphere separation
+            pos = {}
+            radius = 10
+            
+            # Distribute nodes evenly between hemispheres regardless of region names
+            left_nodes = list(range(0, n_nodes, 2))  # Even indices
+            right_nodes = list(range(1, n_nodes, 2)) # Odd indices
+            
+            # Position left hemisphere nodes in a semicircle
+            for i, node in enumerate(left_nodes):
+                angle = (i / max(1, len(left_nodes)-1)) * np.pi - np.pi/2
+                pos[node] = (-radius * np.cos(angle), radius * np.sin(angle))
+            
+            # Position right hemisphere nodes in a semicircle
+            for i, node in enumerate(right_nodes):
+                angle = (i / max(1, len(right_nodes)-1)) * np.pi - np.pi/2
+                pos[node] = (radius * np.cos(angle), radius * np.sin(angle))
+            
+            # Draw edges with width and color based on connection strength
+            has_negative = np.any(conn_matrix < 0)
+            
+            for (u, v, d) in G.edges(data=True):
+                weight = d['weight']
+                width = min(5, abs(weight) * 5)  # Cap width for very strong connections
                 
-                # Create a schematic brain network visualization
-                fig, ax = plt.subplots(figsize=(10, 8))
-                
-                # Create a network graph
-                n_nodes = conn_matrix.shape[0]
-                G = nx.Graph()
-                
-                # Add nodes
-                for i in range(n_nodes):
-                    G.add_node(i)
-                
-                # Add edges above threshold
-                for i in range(n_nodes):
-                    for j in range(i+1, n_nodes):
-                        if abs(conn_matrix[i, j]) > threshold:  # Use absolute value for difference matrices
-                            G.add_edge(i, j, weight=conn_matrix[i, j])
-                
-                # Create a brain-shaped layout
-                pos = {}
-                radius = 10
-                node_per_ring = max(1, n_nodes // 3)
-                
-                # Place nodes in a brain-like shape (front to back)
-                for i in range(n_nodes):
-                    if i < node_per_ring:
-                        # Frontal nodes
-                        angle = (i / node_per_ring) * np.pi - np.pi/2
-                        pos[i] = (radius * 0.8 * np.cos(angle), radius * 1.2 * np.sin(angle) + radius * 0.7)
-                    elif i < 2 * node_per_ring:
-                        # Central nodes
-                        angle = ((i - node_per_ring) / node_per_ring) * np.pi - np.pi/2
-                        pos[i] = (radius * np.cos(angle), radius * np.sin(angle))
-                    else:
-                        # Posterior nodes
-                        angle = ((i - 2 * node_per_ring) / max(1, (n_nodes - 2 * node_per_ring))) * np.pi - np.pi/2
-                        pos[i] = (radius * 0.8 * np.cos(angle), radius * 1.2 * np.sin(angle) - radius * 0.7)
-                
-                # Draw edges with width and color based on connection strength
-                # Check if we're visualizing a difference matrix
-                has_negative = np.any(conn_matrix < 0)
-                
-                for (u, v, d) in G.edges(data=True):
-                    weight = d['weight']
-                    width = min(5, abs(weight) * 5)  # Cap width for very strong connections
+                if has_negative:
+                    # For difference matrices: red for positive, blue for negative
+                    color = 'red' if weight > 0 else 'blue'
+                    alpha = min(0.9, 0.5 + abs(weight))
+                else:
+                    # For regular connectivity: all blue with varying intensity
+                    color = 'blue'
+                    alpha = min(0.9, 0.3 + weight)
                     
-                    if has_negative:
-                        # For difference matrices: red for positive, blue for negative
-                        color = 'red' if weight > 0 else 'blue'
-                        alpha = min(0.9, 0.5 + abs(weight))
-                    else:
-                        # For regular connectivity: all blue with varying intensity
-                        color = 'blue'
-                        alpha = min(0.9, 0.3 + weight)
-                        
-                    nx.draw_networkx_edges(G, pos, edgelist=[(u, v)], width=width, alpha=alpha,
-                                         edge_color=color)
-                
-                # Draw nodes with size based on degree
-                node_degrees = dict(G.degree())
-                node_sizes = [150 + 50 * node_degrees.get(node, 0) for node in G.nodes()]
-                nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='skyblue',
-                                     alpha=0.8, edgecolors='black')
-                
-                # Add labels if we have region names
-                if len(regions) == n_nodes:
-                    labels = {i: short_labels[i] for i in range(n_nodes)}
-                    nx.draw_networkx_labels(G, pos, labels=labels, font_size=8, font_color='black')
-                
-                # Add title and make it look nice
-                ax.set_title(f"{title}\n(Schematic Representation)")
-                ax.set_facecolor('whitesmoke')
-                ax.axis('off')
-                
-                # Add schematic outline of brain
-                brain_outline = plt.Circle((0, 0), radius, fill=False, color='gray', linestyle='--', alpha=0.5)
-                ax.add_patch(brain_outline)
-                
-                # Add a note about being a schematic view
-                ax.text(0, -radius*1.5,
-                       "This is a schematic brain network representation with\nnode positions arranged in an approximate brain shape.",
-                       ha='center', fontsize=10, style='italic')
-                
-                return fig
+                nx.draw_networkx_edges(G, pos, edgelist=[(u, v)], width=width, alpha=alpha,
+                                     edge_color=color)
+            
+            # Draw nodes with different colors for left and right hemispheres
+            nx.draw_networkx_nodes(G, pos, nodelist=left_nodes, node_size=500, 
+                                 node_color='lightblue', alpha=0.8, edgecolors='black')
+            nx.draw_networkx_nodes(G, pos, nodelist=right_nodes, node_size=500,
+                                 node_color='lightgreen', alpha=0.8, edgecolors='black')
+            
+            # Add labels based on region names
+            if len(regions) == n_nodes:
+                labels = {i: short_labels[i] for i in G.nodes()}
+                nx.draw_networkx_labels(G, pos, labels=labels, font_size=9, font_color='black')
+            else:
+                # Add numeric labels if no region names
+                labels = {i: str(i+1) for i in G.nodes()}
+                nx.draw_networkx_labels(G, pos, labels=labels, font_size=10, font_color='black')
+            
+            # Add title and style
+            ax.set_title(f"{title}\n(Schematic Representation)")
+            ax.set_facecolor('whitesmoke')
+            ax.axis('off')
+            
+            # Add hemisphere dividing line and labels
+            plt.axvline(x=0, color='gray', linestyle='-', alpha=0.5)
+            plt.text(-radius*1.2, 0, "Left Hemisphere", ha='center', va='center', rotation=90, fontsize=12)
+            plt.text(radius*1.2, 0, "Right Hemisphere", ha='center', va='center', rotation=90, fontsize=12)
+            
+            # Add a note about the visualization approach
+            ax.text(0, -radius*1.5,
+                   "Balanced schematic representation with equal distribution of regions across hemispheres",
+                   ha='center', fontsize=10, style='italic')
+            
+            return fig, None
         
         # Create tabs for different brain views
         brain_tab1, brain_tab2, brain_tab3 = st.tabs(["Neurotypical", "ASD", "Difference"])
         
         with brain_tab1:
             try:
-                brain_fig = plot_connectome(nt_matrix, brain_threshold, "Neurotypical Brain Connectivity")
-                st.pyplot(brain_fig)
+                if use_interactive:
+                    # Get balanced coordinates for interactive visualization
+                    balanced_coords = get_balanced_coordinates(nt_matrix.shape[0])
+                    
+                    # Interactive visualization without the display_mode parameter
+                    view = plotting.view_connectome(
+                        nt_matrix,
+                        balanced_coords,
+                        edge_threshold=brain_threshold
+                    )
+                    
+                    # Display in Streamlit
+                    html_content = view.get_iframe()
+                    st.components.v1.html(html_content, height=600)
+                    st.caption("Neurotypical Brain Connectivity - Interactive 3D View")
+                else:
+                    # For the static visualization, modify the plot_connectome function:
+                    display = plotting.plot_connectome(
+                        conn_matrix, 
+                        all_coords,  # Using our custom balanced coordinates
+                        edge_threshold=threshold,
+                        node_size=50,
+                        display_mode="z",  # This shows the top view (axial)
+                        figure=fig,
+                        node_color='auto'
+                    )
                 
                 st.markdown("""
                 **Observations in Neurotypical Brain**:
@@ -1024,8 +1126,32 @@ elif page == "Network Visualization":
         
         with brain_tab2:
             try:
-                brain_fig = plot_connectome(asd_matrix, brain_threshold, "ASD Brain Connectivity")
-                st.pyplot(brain_fig)
+                if use_interactive:
+                    # Get balanced coordinates for interactive visualization
+                    balanced_coords = get_balanced_coordinates(asd_matrix.shape[0])
+                    
+                    # Interactive visualization without the display_mode parameter
+                    view = plotting.view_connectome(
+                        asd_matrix,
+                        balanced_coords,
+                        edge_threshold=brain_threshold
+                    )
+                    
+                    # Display in Streamlit
+                    html_content = view.get_iframe()
+                    st.components.v1.html(html_content, height=600)
+                    st.caption("ASD Brain Connectivity - Interactive 3D View")
+                else:
+                    # For the static visualization, modify the plot_connectome function:
+                    display = plotting.plot_connectome(
+                        conn_matrix, 
+                        all_coords,  # Using our custom balanced coordinates
+                        edge_threshold=threshold,
+                        node_size=50,
+                        display_mode="z",  # This shows the top view (axial)
+                        figure=fig,
+                        node_color='auto'
+                    )
                 
                 st.markdown("""
                 **Observations in ASD Brain**:
@@ -1040,8 +1166,33 @@ elif page == "Network Visualization":
             try:
                 # Normalize the difference matrix for better visualization
                 diff_norm = diff_matrix / np.max(np.abs(diff_matrix))
-                brain_fig = plot_connectome(diff_norm, brain_threshold, "Connectivity Differences (ASD - Neurotypical)")
-                st.pyplot(brain_fig)
+                
+                if use_interactive:
+                    # Get balanced coordinates for interactive visualization
+                    balanced_coords = get_balanced_coordinates(diff_norm.shape[0])
+                    
+                    # Interactive visualization without the display_mode parameter
+                    view = plotting.view_connectome(
+                        diff_norm,
+                        balanced_coords,
+                        edge_threshold=brain_threshold
+                    )
+                    
+                    # Display in Streamlit
+                    html_content = view.get_iframe()
+                    st.components.v1.html(html_content, height=600)
+                    st.caption("Connectivity Differences (ASD - Neurotypical) - Interactive 3D View")
+                else:
+                    # For the static visualization, modify the plot_connectome function:
+                    display = plotting.plot_connectome(
+                        conn_matrix, 
+                        all_coords,  # Using our custom balanced coordinates
+                        edge_threshold=threshold,
+                        node_size=50,
+                        display_mode="z",  # This shows the top view (axial)
+                        figure=fig,
+                        node_color='auto'
+                    )
                 
                 st.markdown("""
                 **Connectivity Differences**:
@@ -1063,28 +1214,50 @@ elif page == "Network Visualization":
             G.add_node(i)
         
         # Add edges above threshold
+        edge_count = 0
         for i in range(len(regions)):
             for j in range(i+1, len(regions)):
                 if conn_matrix[i, j] > threshold_value:
                     G.add_edge(i, j, weight=conn_matrix[i, j])
+                    edge_count += 1
         
-        # Calculate metrics
-        avg_path_length = nx.average_shortest_path_length(G) if nx.is_connected(G) else np.nan
-        avg_clustering = nx.average_clustering(G)
-        density = nx.density(G)
+        # Calculate metrics with better handling for disconnected graphs
+        metrics = {}
         
-        return {
-            'Average Path Length': avg_path_length,
-            'Average Clustering Coefficient': avg_clustering,
-            'Network Density': density
-        }
+        # Edge count is always available regardless of connectivity
+        metrics['Edge Count'] = edge_count
+        metrics['Network Density'] = nx.density(G)
+        
+        # Average clustering can be calculated even on disconnected graphs
+        metrics['Average Clustering Coefficient'] = nx.average_clustering(G)
+        
+        # Path length requires connected graph - use largest component if disconnected
+        if nx.is_connected(G):
+            metrics['Average Path Length'] = nx.average_shortest_path_length(G)
+        else:
+            # Find the largest connected component
+            largest_cc = max(nx.connected_components(G), key=len)
+            largest_subgraph = G.subgraph(largest_cc).copy()
+            
+            if len(largest_cc) > 1:  # Need at least 2 nodes for path length
+                metrics['Average Path Length (largest component)'] = nx.average_shortest_path_length(largest_subgraph)
+            else:
+                metrics['Average Path Length (largest component)'] = float('nan')
+        
+        return metrics
     
     try:
         # Use brain_threshold if we're in Brain View, otherwise use the threshold from the interactive/graph view
         metrics_threshold = brain_threshold if viz_option == "Brain View" else threshold
         
-        nt_metrics = calculate_network_metrics(nt_matrix, metrics_threshold)
-        asd_metrics = calculate_network_metrics(asd_matrix, metrics_threshold)
+        # Try a lower threshold if no connections at current threshold
+        if metrics_threshold > 0.5:
+            trial_threshold = metrics_threshold
+        else:
+            trial_threshold = metrics_threshold / 2
+        
+        nt_metrics = calculate_network_metrics(nt_matrix, trial_threshold)
+        asd_metrics = calculate_network_metrics(asd_matrix, trial_threshold)
         
         # Create DataFrame for metrics
         metrics_df = pd.DataFrame({
@@ -1097,13 +1270,15 @@ elif page == "Network Visualization":
         fig, ax = plt.subplots(figsize=(10, 6))
         metrics_df.plot(x='Metric', y=['Neurotypical', 'ASD'], kind='bar', ax=ax)
         plt.ylabel('Value')
-        plt.title('Network Metrics Comparison')
+        plt.title(f'Network Metrics Comparison (threshold: {trial_threshold:.2f})')
         plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
         st.pyplot(fig)
         
         st.markdown("""
         **Network Metrics Interpretation**:
+        
+        - **Edge Count**: Number of connections above threshold. Differences indicate varying connectivity density.
         
         - **Average Path Length**: Average number of steps needed to go from one node to another. Higher values in ASD may indicate less efficient information transfer.
         
@@ -1113,9 +1288,13 @@ elif page == "Network Visualization":
         
         These metrics quantify differences in brain network organization between neurotypical and ASD brains.
         """)
-    
+
     except Exception as e:
-        st.warning(f"Could not calculate network metrics at the current threshold. Try lowering the threshold to ensure connected networks. Error: {str(e)}")
+        st.warning(f"Could not calculate network metrics at the current threshold ({metrics_threshold:.2f}). Try lowering the threshold to ensure connected networks. Error: {str(e)}")
+        
+        # Suggest a lower threshold
+        suggested_threshold = max(0.1, metrics_threshold/2)
+        st.info(f"Suggestion: Try setting the threshold to {suggested_threshold:.2f} to see more connections and allow metric calculation.")
 
 # Regional Differences page
 elif page == "Regional Differences":
