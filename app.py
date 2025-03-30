@@ -10,6 +10,9 @@ import os
 import requests
 from io import BytesIO
 import zipfile
+from pyvis.network import Network
+import tempfile
+import pathlib
 
 # Set page configuration
 st.set_page_config(
@@ -521,15 +524,18 @@ elif page == "Network Visualization":
     """)
     
     # Add view option for different visualizations
-    viz_option = st.radio("Select Visualization Type", ["Graph View", "Brain View"])
+    viz_option = st.radio("Select Visualization Type", ["Graph View", "Interactive Graph", "Brain View"])
     
     if viz_option == "Graph View":
-        # Threshold slider
-        threshold = st.slider("Connection Strength Threshold", 0.0, 1.0, 0.4, 0.05)
+        # Threshold slider with lower default value
+        threshold = st.slider("Connection Strength Threshold", 0.0, 1.0, 0.2, 0.05)
         
         # Option to use abbreviated labels
         use_short_labels = st.checkbox("Use abbreviated region labels for graph", value=True)
         display_labels = short_labels if use_short_labels else regions
+        
+        # Add an info message to guide users
+        st.info("Adjust the threshold to control the density of connections shown. Lower values show more connections, higher values show only the strongest connections.")
         
         col1, col2 = st.columns(2)
         
@@ -542,10 +548,12 @@ elif page == "Network Visualization":
                 G.add_node(i, name=labels[i])
             
             # Add edges above threshold
+            edge_count = 0
             for i in range(len(labels)):
                 for j in range(i+1, len(labels)):
                     if conn_matrix[i, j] > threshold:
                         G.add_edge(i, j, weight=conn_matrix[i, j])
+                        edge_count += 1
             
             # Create visualization
             fig, ax = plt.subplots(figsize=(10, 8))
@@ -568,7 +576,7 @@ elif page == "Network Visualization":
             font_size = 8 if len(G.nodes()) > 20 else 10
             nx.draw_networkx_labels(G, pos, labels={i: labels[i] for i in G.nodes()}, font_size=font_size, ax=ax)
             
-            plt.title(title)
+            plt.title(f"{title} (Edges: {edge_count})")
             plt.axis('off')
             return fig
         
@@ -593,6 +601,98 @@ elif page == "Network Visualization":
             - More variable connection patterns
             - Some regions showing relatively isolated connectivity
             """)
+    
+    elif viz_option == "Interactive Graph":
+        # Threshold slider with lower default value
+        threshold = st.slider("Connection Strength Threshold (Interactive)", 0.0, 1.0, 0.2, 0.05)
+        
+        # Option to use abbreviated labels
+        use_short_labels = st.checkbox("Use abbreviated region labels for interactive graph", value=True)
+        display_labels = short_labels if use_short_labels else regions
+        
+        # Add an info message to guide users
+        st.info("""
+        This interactive visualization allows you to:
+        - Drag nodes to rearrange the network
+        - Hover over edges to see connection strengths
+        - Zoom in/out using mouse wheel
+        - Click on nodes to highlight their connections
+        """)
+        
+        # Create tabs for NT and ASD visualizations
+        nt_tab, asd_tab = st.tabs(["Neurotypical", "ASD"])
+        
+        # Function to create an interactive network visualization using PyVis
+        def create_interactive_network(conn_matrix, threshold, title, labels):
+            # Create networkx graph
+            G = nx.Graph()
+            
+            # Add nodes with labels
+            for i in range(len(labels)):
+                # Calculate node size based on average connectivity
+                conn_strength = np.mean([conn_matrix[i, j] for j in range(len(labels)) if conn_matrix[i, j] > threshold and i != j])
+                node_size = 15 + 20 * conn_strength if not np.isnan(conn_strength) else 15
+                
+                G.add_node(i, label=labels[i], title=labels[i], size=node_size)
+            
+            # Add edges above threshold
+            for i in range(len(labels)):
+                for j in range(i+1, len(labels)):
+                    if conn_matrix[i, j] > threshold:
+                        # Scale width by connection strength
+                        width = 1 + 5 * conn_matrix[i, j]
+                        G.add_edge(i, j, weight=conn_matrix[i, j], title=f"Strength: {conn_matrix[i, j]:.3f}", width=width)
+            
+            # Create PyVis network from networkx graph
+            nt = Network(height="500px", width="100%", bgcolor="#ffffff", font_color="black")
+            
+            # Set physics and other options
+            nt.barnes_hut(spring_length=200, spring_strength=0.01, damping=0.09, central_gravity=0.3)
+            nt.repulsion(node_distance=100, central_gravity=0.0, spring_length=200, spring_strength=0.05)
+            nt.toggle_stabilization(True)
+            
+            # Add the networkx graph to PyVis
+            nt.from_nx(G)
+            
+            # Generate html file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.html') as temp_file:
+                path = pathlib.Path(temp_file.name)
+                nt.save_graph(str(path))
+                return path
+        
+        with nt_tab:
+            try:
+                nt_html_path = create_interactive_network(nt_matrix, threshold, "Neurotypical Brain Network", display_labels)
+                with open(nt_html_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                st.components.v1.html(html_content, height=550)
+                os.unlink(nt_html_path)  # Clean up the temporary file
+                
+                st.markdown("""
+                **Observations in Neurotypical Network**:
+                - More balanced and distributed connectivity
+                - Better integration between different brain regions
+                - More connections between frontal and posterior regions
+                """)
+            except Exception as e:
+                st.error(f"Error creating interactive neurotypical network: {str(e)}")
+        
+        with asd_tab:
+            try:
+                asd_html_path = create_interactive_network(asd_matrix, threshold, "ASD Brain Network", display_labels)
+                with open(asd_html_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                st.components.v1.html(html_content, height=550)
+                os.unlink(asd_html_path)  # Clean up the temporary file
+                
+                st.markdown("""
+                **Observations in ASD Network**:
+                - Fewer long-range connections, particularly between frontal and temporal regions
+                - More variable connection patterns
+                - Some regions showing relatively isolated connectivity
+                """)
+            except Exception as e:
+                st.error(f"Error creating interactive ASD network: {str(e)}")
     
     else:  # Brain View
         st.subheader("3D Brain Network Visualization")
