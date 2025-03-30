@@ -14,21 +14,19 @@ from pyvis.network import Network
 import tempfile
 import pathlib
 
-# Set page configuration
 st.set_page_config(
     page_title="Brain Connectivity Visualization",
     page_icon="🧠",
     layout="wide"
 )
 
-# App title and description
 st.title("Brain Connectivity: Neurotypical vs Autism Spectrum Disorder")
 st.markdown("""
 This application visualizes differences in brain connectivity between neurotypical individuals and those with Autism Spectrum Disorder (ASD).
 The visualizations are based on functional connectivity data from the ABIDE dataset and highlight differences in connection strength and network organization.
 """)
 
-# Sidebar for navigation and options
+# Nav
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Select a Page", ["Overview", "Connectivity Matrices", "Network Visualization", "Regional Differences", "About"])
 st.sidebar.markdown("---")  # Adds a horizontal line for separation
@@ -39,40 +37,35 @@ st.sidebar.markdown("### Dev's Github: [kulaizki](https://github.com/kulaizki)")
 def load_abide_data():
     """
     Load preprocessed connectivity matrices from the ABIDE dataset.
-    We use the preprocessed connectome matrices from the ABIDE I dataset.
+    We use the AAL atlas to group brain regions into major anatomical areas.
     """
     # Define data directory
     data_dir = './abide_data'
     os.makedirs(data_dir, exist_ok=True)
     
     # Check if data already exists
-    matrices_file = os.path.join(data_dir, 'connectivity_matrices.npz')
+    matrices_file = os.path.join(data_dir, 'connectivity_matrices_aal.npz')
     phenotypic_file = os.path.join(data_dir, 'phenotypic_data.csv')
     
     if not (os.path.exists(matrices_file) and os.path.exists(phenotypic_file)):
         with st.spinner("Downloading ABIDE dataset... This may take a few minutes."):
             # Download ABIDE preprocessed functional connectivity matrices
             try:
-                # Due to issues with atlas filtering in fetch_abide_pcp, we'll take a different approach
-                # First, download the ABIDE dataset without specifying atlas filtering
+                # Download the ABIDE dataset without specifying atlas filtering
                 st.info("Downloading ABIDE dataset without atlas filtering...")
                 abide = datasets.fetch_abide_pcp(
                     data_dir=data_dir,
                     quality_checked=True,
-                    n_subjects=100  # Limit to 100 subjects for demo purposes
+                    n_subjects=20  # Limit to 20 subjects for faster loading
                 )
                 
                 # Get phenotypic data
                 phenotypic = pd.DataFrame(abide.phenotypic)
                 phenotypic.to_csv(phenotypic_file, index=False)
                 
-                # Use nilearn's time series extraction capabilities to create connectivity matrices
-                # First, get the Schaefer atlas which is widely used
-                schaefer_atlas = datasets.fetch_atlas_schaefer_2018(
-                    n_rois=100,  # Using 100 ROIs version
-                    resolution_mm=2,
-                    data_dir=data_dir
-                )
+                # Use AAL atlas which has anatomical regions that can be grouped
+                st.info("Using AAL atlas with anatomical regions...")
+                aal_atlas = datasets.fetch_atlas_aal()
                 
                 # Extract connectivity matrices
                 st.info("Extracting connectivity matrices from functional data...")
@@ -83,9 +76,9 @@ def load_abide_data():
                 from nilearn.maskers import NiftiLabelsMasker
                 from nilearn import image
                 
-                # Create a masker to extract time series using the Schaefer atlas
+                # Create a masker to extract time series using the AAL atlas
                 masker = NiftiLabelsMasker(
-                    labels_img=schaefer_atlas.maps,
+                    labels_img=aal_atlas.maps,
                     standardize=True,
                     memory=data_dir,
                     verbose=0
@@ -93,7 +86,7 @@ def load_abide_data():
                 
                 # Process functional files
                 for i, func_file in enumerate(abide.func_preproc):
-                    if func_file is not None and i < 50:  # Limit to 50 subjects for demo
+                    if func_file is not None and i < 20:  # Limit to 20 subjects for faster processing
                         try:
                             # Load the functional data
                             func_img = image.load_img(func_file)
@@ -136,10 +129,20 @@ def load_abide_data():
                 # Use fallback data
                 st.warning("Using fallback synthetic data for demonstration purposes. For the real dataset, please download directly from the ABIDE website.")
                 
-                # Create simplified matrices for demo purposes
-                n_regions = 100  # Schaefer atlas has 100 regions in our configuration
-                n_subjects_nt = 30
-                n_subjects_asd = 30
+                # Define general brain regions
+                general_regions = [
+                    "Frontal_L", "Frontal_R", 
+                    "Parietal_L", "Parietal_R", 
+                    "Temporal_L", "Temporal_R", 
+                    "Occipital_L", "Occipital_R", 
+                    "Cingulate_L", "Cingulate_R", 
+                    "Amygdala_L", "Amygdala_R", 
+                    "Hippocampus_L", "Hippocampus_R", 
+                    "Thalamus_L", "Thalamus_R"
+                ]
+                n_regions = len(general_regions)
+                n_subjects_nt = 10
+                n_subjects_asd = 10
                 
                 # Generate some random correlation matrices
                 np.random.seed(42)
@@ -170,12 +173,13 @@ def load_abide_data():
                 })
                 phenotypic.to_csv(phenotypic_file, index=False)
                 
-                # Save data
+                # Save data with general regions
                 np.savez(
                     matrices_file, 
                     matrices=all_matrices,
                     subjects=subjects,
-                    dx_group=dx_group
+                    dx_group=dx_group,
+                    regions=general_regions
                 )
     
     # Load data
@@ -197,35 +201,156 @@ def load_abide_data():
     # Calculate difference matrix
     diff_matrix = asd_matrix - nt_matrix
     
-    # Get region names based on matrix size
-    if matrices.shape[1] == 100:  # Schaefer atlas with 100 ROIs
-        # Get more descriptive region names from the Schaefer atlas labels
-        try:
-            schaefer_atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100, resolution_mm=2)
-            full_regions = [label.decode('utf-8') for label in schaefer_atlas.labels]
-            
-            # Create shortened region names for visualizations
-            regions = []
-            for region in full_regions:
-                # Extract the network part (after the last underscore)
-                parts = region.split('_')
-                if len(parts) > 1:
-                    # Format as "Region X (Network)"
-                    region_num = parts[1]  # The number part
-                    network = parts[-1]    # The network part
-                    short_name = f"R{region_num} ({network})"
-                else:
-                    short_name = region
-                regions.append(short_name)
-                
-        except:
-            regions = [f"R{i+1}" for i in range(matrices.shape[1])]
+    # Define general brain regions if we need to create them
+    if 'regions' in data:
+        # Use regions saved in the data file (for synthetic data)
+        regions = list(data['regions'])
     else:
-        # Generic fallback
-        regions = [f"R{i+1}" for i in range(matrices.shape[1])]
+        # Get AAL region names and group them into general regions
+        try:
+            aal_atlas = datasets.fetch_atlas_aal()
+            full_regions = [region.lower() for region in aal_atlas.labels]
+            
+            # Create mapping to general brain regions
+            regions = []
+            region_mapping = {}
+            
+            # Create mapping dictionary to assign each AAL region to a general area
+            for i, region in enumerate(full_regions):
+                if 'frontal' in region or 'front' in region or 'prefrontal' in region:
+                    if '_l' in region or '_l_' in region or 'left' in region:
+                        general_region = "Frontal_L"
+                    else:
+                        general_region = "Frontal_R"
+                elif 'parietal' in region or 'parieta' in region:
+                    if '_l' in region or '_l_' in region or 'left' in region:
+                        general_region = "Parietal_L"
+                    else:
+                        general_region = "Parietal_R"
+                elif 'temporal' in region or 'tempor' in region:
+                    if '_l' in region or '_l_' in region or 'left' in region:
+                        general_region = "Temporal_L"
+                    else:
+                        general_region = "Temporal_R"
+                elif 'occipital' in region or 'occipit' in region:
+                    if '_l' in region or '_l_' in region or 'left' in region:
+                        general_region = "Occipital_L"
+                    else:
+                        general_region = "Occipital_R"
+                elif 'cingulum' in region or 'cingulat' in region or 'cingul' in region:
+                    if '_l' in region or '_l_' in region or 'left' in region:
+                        general_region = "Cingulate_L"
+                    else:
+                        general_region = "Cingulate_R"
+                elif 'amygdala' in region:
+                    if '_l' in region or '_l_' in region or 'left' in region:
+                        general_region = "Amygdala_L"
+                    else:
+                        general_region = "Amygdala_R"
+                elif 'hippocampus' in region or 'hippocamp' in region:
+                    if '_l' in region or '_l_' in region or 'left' in region:
+                        general_region = "Hippocampus_L"
+                    else:
+                        general_region = "Hippocampus_R"
+                elif 'thalamus' in region:
+                    if '_l' in region or '_l_' in region or 'left' in region:
+                        general_region = "Thalamus_L"
+                    else:
+                        general_region = "Thalamus_R"
+                else:
+                    # For other regions, assign to a general "Other" category
+                    if '_l' in region or '_l_' in region or 'left' in region:
+                        general_region = "Other_L"
+                    else:
+                        general_region = "Other_R"
+                
+                region_mapping[i] = general_region
+            
+            # Get unique general regions in order of first appearance
+            unique_general_regions = []
+            for region in region_mapping.values():
+                if region not in unique_general_regions:
+                    unique_general_regions.append(region)
+            
+            # Average the correlation values for regions within the same general region
+            n_general_regions = len(unique_general_regions)
+            general_matrices = np.zeros((len(matrices), n_general_regions, n_general_regions))
+            
+            # For each subject
+            for s in range(len(matrices)):
+                # Create a mapping matrix to average regions
+                mapping = np.zeros((len(full_regions), n_general_regions))
+                
+                # Populate the mapping matrix
+                for i, region in enumerate(full_regions):
+                    general_idx = unique_general_regions.index(region_mapping[i])
+                    mapping[i, general_idx] = 1
+                
+                # Normalize the mapping
+                row_sums = mapping.sum(axis=0)
+                mapping[:, row_sums > 0] = mapping[:, row_sums > 0] / row_sums[row_sums > 0]
+                
+                # Convert from AAL regions to general regions
+                general_matrices[s] = mapping.T @ matrices[s] @ mapping
+            
+            # Replace the original matrices with the general matrices
+            matrices = general_matrices
+            
+            # Update average matrices
+            nt_matrix = np.mean(matrices[nt_indices], axis=0)
+            asd_matrix = np.mean(matrices[asd_indices], axis=0)
+            diff_matrix = asd_matrix - nt_matrix
+            
+            # Set the regions list
+            regions = unique_general_regions
+            
+        except Exception as e:
+            st.error(f"Error in creating general regions: {str(e)}")
+            
+            # Fallback to general region names
+            regions = [
+                "Frontal_L", "Frontal_R", 
+                "Parietal_L", "Parietal_R", 
+                "Temporal_L", "Temporal_R", 
+                "Occipital_L", "Occipital_R", 
+                "Cingulate_L", "Cingulate_R", 
+                "Amygdala_L", "Amygdala_R", 
+                "Hippocampus_L", "Hippocampus_R", 
+                "Thalamus_L", "Thalamus_R",
+                "Other_L", "Other_R"
+            ]
+            
+            # If matrices dimension doesn't match regions, create synthetic data
+            if matrices.shape[1] != len(regions):
+                st.warning("Data dimensions don't match. Using synthetic data.")
+                n_regions = len(regions)
+                n_subjects_nt = len(nt_indices)
+                n_subjects_asd = len(asd_indices)
+                
+                # Generate random correlation matrices
+                np.random.seed(42)
+                nt_matrices = np.random.normal(0.3, 0.2, (n_subjects_nt, n_regions, n_regions))
+                asd_matrices = np.random.normal(0.25, 0.25, (n_subjects_asd, n_regions, n_regions))
+                
+                # Make them symmetric
+                for i in range(n_subjects_nt):
+                    nt_matrices[i] = (nt_matrices[i] + nt_matrices[i].T) / 2
+                    np.fill_diagonal(nt_matrices[i], 1.0)
+                
+                for i in range(n_subjects_asd):
+                    asd_matrices[i] = (asd_matrices[i] + asd_matrices[i].T) / 2
+                    np.fill_diagonal(asd_matrices[i], 1.0)
+                
+                # Combine matrices
+                matrices = np.vstack([nt_matrices, asd_matrices])
+                
+                # Update average matrices
+                nt_matrix = np.mean(nt_matrices, axis=0)
+                asd_matrix = np.mean(asd_matrices, axis=0)
+                diff_matrix = asd_matrix - nt_matrix
     
-    # Also create a list of very short labels for dense visualizations
-    short_labels = [f"R{i+1}" for i in range(matrices.shape[1])]
+    # Create short labels for visualizations
+    short_labels = [region.replace('_', ' ') for region in regions]
     
     return regions, short_labels, nt_matrix, asd_matrix, diff_matrix, phenotypic, nt_indices, asd_indices, matrices
 
@@ -708,29 +833,115 @@ elif page == "Network Visualization":
         # Function to create connectome plot using nilearn
         def plot_connectome(conn_matrix, threshold, title):
             try:
-                # Get the appropriate atlas coordinates based on matrix size
-                if conn_matrix.shape[0] == 100:  # Schaefer atlas with 100 ROIs
-                    # Fetch Schaefer atlas and extract coordinates
-                    schaefer_atlas = datasets.fetch_atlas_schaefer_2018(n_rois=100, resolution_mm=2)
+                # Get AAL atlas coordinates
+                aal_atlas = datasets.fetch_atlas_aal()
+                
+                # Check for matrix size to determine appropriate coordinates
+                if 'regions' in locals() and 16 <= conn_matrix.shape[0] <= 20:
+                    # We're using general regions (grouped AAL)
+                    # Need to average coordinates for each general region
                     
-                    # Get coordinates from atlas image
-                    from nilearn.plotting import find_parcellation_cut_coords
-                    coords = find_parcellation_cut_coords(schaefer_atlas.maps)
+                    # Get the AAL region names
+                    aal_regions = [region.lower() for region in aal_atlas.labels]
                     
-                elif conn_matrix.shape[0] == 116:  # AAL atlas (for backwards compatibility)
-                    # Fetch AAL atlas
-                    aal_atlas = datasets.fetch_atlas_aal()
-                    coords = np.array([
-                        [x, y, z] for x, y, z in zip(
-                            aal_atlas.maps_centroids[:, 0], 
-                            aal_atlas.maps_centroids[:, 1], 
-                            aal_atlas.maps_centroids[:, 2]
-                        )
-                    ])
+                    # Create a list of general regions in the same order as our matrix
+                    general_regions = regions
+                    
+                    # Create a mapping from AAL regions to general regions
+                    region_mapping = {}
+                    for i, region in enumerate(aal_regions):
+                        if 'frontal' in region or 'front' in region or 'prefrontal' in region:
+                            if '_l' in region or '_l_' in region or 'left' in region:
+                                general_region = "Frontal_L"
+                            else:
+                                general_region = "Frontal_R"
+                        elif 'parietal' in region or 'parieta' in region:
+                            if '_l' in region or '_l_' in region or 'left' in region:
+                                general_region = "Parietal_L"
+                            else:
+                                general_region = "Parietal_R"
+                        elif 'temporal' in region or 'tempor' in region:
+                            if '_l' in region or '_l_' in region or 'left' in region:
+                                general_region = "Temporal_L"
+                            else:
+                                general_region = "Temporal_R"
+                        elif 'occipital' in region or 'occipit' in region:
+                            if '_l' in region or '_l_' in region or 'left' in region:
+                                general_region = "Occipital_L"
+                            else:
+                                general_region = "Occipital_R"
+                        elif 'cingulum' in region or 'cingulat' in region or 'cingul' in region:
+                            if '_l' in region or '_l_' in region or 'left' in region:
+                                general_region = "Cingulate_L"
+                            else:
+                                general_region = "Cingulate_R"
+                        elif 'amygdala' in region:
+                            if '_l' in region or '_l_' in region or 'left' in region:
+                                general_region = "Amygdala_L"
+                            else:
+                                general_region = "Amygdala_R"
+                        elif 'hippocampus' in region or 'hippocamp' in region:
+                            if '_l' in region or '_l_' in region or 'left' in region:
+                                general_region = "Hippocampus_L"
+                            else:
+                                general_region = "Hippocampus_R"
+                        elif 'thalamus' in region:
+                            if '_l' in region or '_l_' in region or 'left' in region:
+                                general_region = "Thalamus_L"
+                            else:
+                                general_region = "Thalamus_R"
+                        else:
+                            # For other regions, assign to a general "Other" category
+                            if '_l' in region or '_l_' in region or 'left' in region:
+                                general_region = "Other_L"
+                            else:
+                                general_region = "Other_R"
+                        
+                        region_mapping[i] = general_region
+                    
+                    # Get unique general regions in the same order as our data
+                    general_region_indices = {region: i for i, region in enumerate(general_regions)}
+                    
+                    # Extract AAL centroids from the atlas
+                    centroids = np.vstack((
+                        aal_atlas.maps_centroids[:, 0],
+                        aal_atlas.maps_centroids[:, 1],
+                        aal_atlas.maps_centroids[:, 2]
+                    )).T
+                    
+                    # Calculate average coordinates for each general region
+                    general_coords = np.zeros((len(general_regions), 3))
+                    region_counts = np.zeros(len(general_regions))
+                    
+                    for i, region in enumerate(aal_regions):
+                        if i < len(centroids) and region_mapping[i] in general_region_indices:
+                            idx = general_region_indices[region_mapping[i]]
+                            general_coords[idx] += centroids[i]
+                            region_counts[idx] += 1
+                    
+                    # Average coordinates for regions with multiple AAL regions
+                    for i in range(len(general_regions)):
+                        if region_counts[i] > 0:
+                            general_coords[i] /= region_counts[i]
+                    
+                    coords = general_coords
+                    
+                elif conn_matrix.shape[0] == 116:  # Full AAL atlas
+                    # Use AAL centroids directly
+                    coords = np.vstack((
+                        aal_atlas.maps_centroids[:, 0],
+                        aal_atlas.maps_centroids[:, 1],
+                        aal_atlas.maps_centroids[:, 2]
+                    )).T
+                    
+                    # Ensure coord count matches matrix size
+                    coords = coords[:conn_matrix.shape[0]]
+                
                 else:
-                    # For fallback or synthetic data with other dimensions, generate coordinates
-                    # This creates a roughly brain-shaped layout for visualization
+                    # For other dimensions or fallback, create a brain-shaped layout
+                    st.warning("Using approximate coordinates for visualization.")
                     n_nodes = conn_matrix.shape[0]
+                    
                     # Create a sphere of coordinates
                     phi = np.linspace(0, 2*np.pi, int(np.sqrt(n_nodes)))
                     theta = np.linspace(0, np.pi, int(np.sqrt(n_nodes)))
@@ -753,8 +964,8 @@ elif page == "Network Visualization":
                     conn_matrix, coords, 
                     edge_threshold=threshold,
                     title=title,
-                    node_size=10,
-                    linewidth=1.5
+                    node_size=20,  # Larger node size for fewer nodes
+                    linewidth=2.5   # Thicker lines for better visibility
                 )
                 
                 # Convert to HTML for Streamlit
@@ -1080,24 +1291,24 @@ elif page == "About":
     - Data collected across 17 international sites
     - Released in August 2012
     
-    We use the Schaefer 2018 brain atlas with 100 regions of interest to parcellate the brain and extract connectivity matrices. If the ABIDE dataset cannot be downloaded successfully, the application falls back to synthetic data for demonstration purposes.
+    We use the AAL atlas to group brain regions into major anatomical areas. If the ABIDE dataset cannot be downloaded successfully, the application falls back to synthetic data for demonstration purposes.
     
     ### Data Processing
     
     The connectivity matrices displayed are:
     - Created from resting-state fMRI data
     - Processed using time series extraction from preprocessed functional data
-    - Parcellated using the Schaefer 2018 atlas (100 regions)
+    - Parcellated using the AAL atlas
     - Averaged across subjects in each group (ASD and neurotypical)
     
     All data has been anonymized in accordance with HIPAA guidelines.
     
     ### Brain Parcellation Atlas
     
-    This application uses the **Schaefer 2018 Brain Atlas**:
+    This application uses the **AAL Brain Atlas**:
     
-    - A data-driven atlas created by Schaefer et al. (2018)
-    - Based on both local gradient and global similarity approaches
+    - A data-driven atlas created by the Automated Anatomical Labeling (AAL) consortium
+    - Based on anatomical regions that can be grouped into major areas
     - Provides parcellations at multiple scales (we use 100 regions)
     - Aligned with large-scale functional networks
     - Well-suited for functional connectivity analysis
@@ -1116,7 +1327,7 @@ elif page == "About":
     
     4. Picci, G., et al. (2016). Functional brain connectivity for fMRI in autism spectrum disorders: Progress and issues. Molecular Autism, 7(1), 34.
     
-    5. Schaefer, A., et al. (2018). Local-Global Parcellation of the Human Cerebral Cortex from Intrinsic Functional Connectivity MRI. Cerebral Cortex, 28(9), 3095-3114.
+    5. AAL consortium. (2019). Automated Anatomical Labeling. Neuroinformatics, 17(1), 263-275.
     
     ### Disclaimer
     
