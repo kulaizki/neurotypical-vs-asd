@@ -42,7 +42,7 @@ Run the Streamlit application:
 streamlit run app.py
 ```
 
-The application will automatically download and process the ABIDE dataset the first time it runs. This may take a few minutes depending on your internet connection.
+The application will automatically download and process the ABIDE dataset the first time it runs. This may usually take a few minutes depending on your internet connection.
 
 ### Data Handling
 
