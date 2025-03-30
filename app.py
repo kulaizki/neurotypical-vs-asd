@@ -14,37 +14,27 @@ from pyvis.network import Network
 import tempfile
 import pathlib
 import ssl
-import warnings
 
-# Disable SSL verification for the AAL atlas download
-# This is needed because the CNRS server has SSL certificate issues
-ssl._create_default_https_context = ssl._create_unverified_context
-warnings.filterwarnings("ignore", message="Unverified HTTPS request")
-
-# Set page configuration
 st.set_page_config(
     page_title="Brain Connectivity Visualization",
     page_icon="🧠",
     layout="wide"
 )
 
-# App title and description
 st.title("Brain Connectivity: Neurotypical vs Autism Spectrum Disorder")
 st.markdown("""
 This application visualizes differences in brain connectivity between neurotypical individuals and those with Autism Spectrum Disorder (ASD).
 The visualizations are based on functional connectivity data from the ABIDE dataset and highlight differences in connection strength and network organization.
 """)
 
-# Sidebar for navigation and options
+# Nav 
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Select a Page", ["Overview", "Connectivity Matrices", "Network Visualization", "Regional Differences", "About"])
 st.sidebar.markdown("---")  # Adds a horizontal line for separation
 st.sidebar.markdown("### Dev's Github: [kulaizki](https://github.com/kulaizki)")
 
-# Add this function definition to your code, before it's called in the Brain View section
 def get_balanced_coordinates(n_regions):
     """Create balanced coordinates across left and right hemispheres for brain visualization"""
-    # Define manually balanced coordinates for visualization
     # Left hemisphere (negative x values)
     left_coords = [
         [-40, -30, 20],  # Frontal left
@@ -69,7 +59,6 @@ def get_balanced_coordinates(n_regions):
         [10, -20, 10],   # Subcortical right
     ]
     
-    # Combine coordinates
     all_coords = left_coords + right_coords
     
     # If we have more coordinates than regions, select a balanced subset
@@ -92,14 +81,13 @@ def get_balanced_coordinates(n_regions):
         
     return all_coords
 
-# Function to download and load ABIDE preprocessed data
 @st.cache_data
 def load_abide_data():
     """
     Load preprocessed connectivity matrices from the ABIDE dataset.
     We use the AAL atlas to group brain regions into major anatomical areas.
     """
-    # Define data directory
+
     data_dir = './abide_data'
     os.makedirs(data_dir, exist_ok=True)
     
@@ -111,7 +99,7 @@ def load_abide_data():
         with st.spinner("Downloading ABIDE dataset... This may take a few minutes."):
             # Download ABIDE preprocessed functional connectivity matrices
             try:
-                # First, download the ABIDE dataset without specifying atlas filtering
+                # Download the ABIDE dataset without specifying atlas filtering
                 st.info("Downloading ABIDE dataset without atlas filtering...")
                 abide = datasets.fetch_abide_pcp(
                     data_dir=data_dir,
@@ -606,7 +594,6 @@ elif page == "Connectivity Matrices":
     
     view_option = st.radio("Select View", ["Side by Side", "Difference Map"])
     
-    # Add a checkbox to toggle between full and abbreviated labels
     use_short_labels = st.checkbox("Use abbreviated region labels", value=True)
     display_labels = short_labels if use_short_labels else regions
     
@@ -721,12 +708,10 @@ elif page == "Network Visualization":
         use_short_labels = st.checkbox("Use abbreviated region labels for graph", value=True)
         display_labels = short_labels if use_short_labels else regions
         
-        # Add an info message to guide users
         st.info("Adjust the threshold to control the density of connections shown. Lower values show more connections, higher values show only the strongest connections.")
         
         col1, col2 = st.columns(2)
         
-        # Function to create network graph
         def create_brain_network(conn_matrix, threshold, title, labels):
             G = nx.Graph()
             
@@ -797,7 +782,6 @@ elif page == "Network Visualization":
         use_short_labels = st.checkbox("Use abbreviated region labels for interactive graph", value=True)
         display_labels = short_labels if use_short_labels else regions
         
-        # Add an info message to guide users
         st.info("""
         This interactive visualization allows you to:
         - Drag nodes to rearrange the network
@@ -806,7 +790,7 @@ elif page == "Network Visualization":
         - Click on nodes to highlight their connections
         """)
         
-        # Function to create an interactive network visualization using PyVis
+        # Network Visualization using PyVis
         def create_interactive_network(conn_matrix, threshold, title, labels):
             # Create networkx graph
             G = nx.Graph()
@@ -892,7 +876,6 @@ elif page == "Network Visualization":
         # Threshold for brain visualization
         brain_threshold = st.slider("Connection Strength Threshold", 0.5, 0.9, 0.7, 0.05)
         
-        # Add a checkbox to show data source information
         show_data_info = st.checkbox("Show data source information", value=False)
         if show_data_info:
             st.info("""
@@ -902,18 +885,15 @@ elif page == "Network Visualization":
             functional connectivity data from your analysis.
             """)
         
-        # Add this near the top of your Brain View section
         use_interactive = st.checkbox("Use interactive 3D visualization (recommended)", value=True)
 
-        # Function to create connectome plot using nilearn with Harvard-Oxford atlas instead of AAL
+        # Create connectome plot using nilearn with Harvard-Oxford atlas instead of AAL
         def plot_connectome(conn_matrix, threshold, title):
             try:
-                # Use Harvard-Oxford atlas which is included in nilearn and doesn't require external download
                 from nilearn import datasets
                 import matplotlib.pyplot as plt
                 import numpy as np
                 
-                # Define manually balanced coordinates for visualization
                 # Left hemisphere (negative x values)
                 left_coords = [
                     [-40, -30, 20],  # Frontal left
@@ -941,7 +921,6 @@ elif page == "Network Visualization":
                 # Combine coordinates
                 all_coords = left_coords + right_coords
                 
-                # Ensure we have the right number of coordinates for our matrix
                 n_regions = conn_matrix.shape[0]
                 
                 # If we have more coordinates than regions, select a balanced subset
@@ -968,8 +947,6 @@ elif page == "Network Visualization":
                 # Check if we're visualizing a difference matrix by looking for negative values
                 has_negative = np.any(conn_matrix < 0)
                 
-                # Simpler parameters to avoid the cmap error, but still get good visualization
-                # Removed edge_cmap parameter which causes the error
                 display = plotting.plot_connectome(
                     conn_matrix, 
                     all_coords,  # Using our custom balanced coordinates
@@ -983,17 +960,15 @@ elif page == "Network Visualization":
                 # Add title
                 plt.suptitle(title, fontsize=16)
                 
-                # Add a note about the visualization approach
                 fig.text(0.5, 0.01, 
                          "Note: Regions distributed across both hemispheres for balanced visualization", 
                          ha='center', fontsize=8, style='italic')
                 
-                return fig, all_coords  # Return coordinates along with the figure
+                return fig, all_coords  
                 
             except Exception as e:
                 st.error(f"Error creating brain visualization: {str(e)}")
                 
-                # Create a balanced fallback visualization and return default coordinates
                 return create_balanced_fallback_visualization(conn_matrix, threshold, title), None
 
         def create_balanced_fallback_visualization(conn_matrix, threshold, title):
@@ -1004,11 +979,9 @@ elif page == "Network Visualization":
             n_nodes = conn_matrix.shape[0]
             G = nx.Graph()
             
-            # Add nodes
             for i in range(n_nodes):
                 G.add_node(i)
             
-            # Add edges above threshold
             for i in range(n_nodes):
                 for j in range(i+1, n_nodes):
                     if abs(conn_matrix[i, j]) > threshold:
