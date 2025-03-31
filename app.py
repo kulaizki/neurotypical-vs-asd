@@ -30,7 +30,7 @@ The visualizations are based on functional connectivity data from the ABIDE data
 # Nav 
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Select a Page", ["Overview", "Connectivity Matrices", "Network Visualization", "Regional Differences", "About"])
-st.sidebar.markdown("---")  # Adds a horizontal line for separation
+st.sidebar.markdown("---")  
 st.sidebar.markdown("### Dev's Github: [kulaizki](https://github.com/kulaizki)")
 
 def get_balanced_coordinates(n_regions):
